@@ -1,5 +1,8 @@
 """Render vertical, captioned clips from video and transcript data."""
+import argparse
+import json
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -151,3 +154,53 @@ def render_clip(video_path, clip_start, clip_end, segments, output_path):
         ]
         subprocess.run(command, cwd=work_dir, check=True)
     return output
+
+
+def probe_media(path):
+    cmd = [
+        "ffprobe", "-v", "error", "-show_entries",
+        "format=duration:stream=width,height", "-of", "json", str(path),
+    ]
+    info = json.loads(subprocess.check_output(cmd, text=True))
+    stream = next(s for s in info.get("streams", []) if "width" in s)
+    return stream["width"], stream["height"], float(info["format"]["duration"])
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Render vertical, captioned clips from moments.")
+    parser.add_argument("--video", required=True, type=Path, help="Path to video file")
+    parser.add_argument("--transcript", required=True, type=Path, help="Path to transcript JSON")
+    parser.add_argument("--moments", required=True, type=Path, help="Path to moments JSON")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--index", type=int, help="1-based index of moment to render")
+    group.add_argument("--all", action="store_true", help="Render all moments")
+    parser.add_argument("--out", type=Path, default=Path("clips"), help="Output directory")
+    args = parser.parse_args(argv)
+
+    for name, p in [("video", args.video), ("transcript", args.transcript), ("moments", args.moments)]:
+        if not p.is_file():
+            sys.exit(f"Error: {name} file not found: {p}")
+
+    transcript = json.loads(args.transcript.read_text(encoding="utf-8"))
+    segments = transcript.get("segments", [])
+
+    moments_data = json.loads(args.moments.read_text(encoding="utf-8"))
+    moments = moments_data.get("moments", moments_data) if isinstance(moments_data, dict) else moments_data
+
+    if not moments:
+        sys.exit(f"Error: no moments found in {args.moments}")
+    if args.index is not None and not (1 <= args.index <= len(moments)):
+        sys.exit(f"Error: index {args.index} out of range (1-{len(moments)})")
+
+    selected = enumerate(moments, 1) if args.all else [(args.index, moments[args.index - 1])]
+    args.out.mkdir(parents=True, exist_ok=True)
+
+    for idx, moment in selected:
+        out_path = args.out / f"{args.video.stem}_clip_{idx}.mp4"
+        render_clip(args.video, moment["start"], moment["end"], segments, out_path)
+        w, h, duration = probe_media(out_path)
+        print(f"{out_path} {w}x{h} {duration:.1f}s")
+
+
+if __name__ == "__main__":
+    main()

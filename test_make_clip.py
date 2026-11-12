@@ -1,7 +1,7 @@
 import json
 import subprocess
 
-from make_clip import crop_clip, cut_clip, generate_ass_subtitles, render_clip
+from make_clip import crop_clip, cut_clip, generate_ass_subtitles, main, render_clip
 
 
 def make_sample_video(tmp_path):
@@ -105,3 +105,75 @@ def test_render_clip_burns_ass_in_windows_safe_working_directory(tmp_path):
     assert (video_stream["width"], video_stream["height"]) == (1080, 1920)
     assert abs(float(info["format"]["duration"]) - 1.4) <= 0.5
     assert not list(output.parent.glob("clipforge_*"))
+
+
+def test_cli_renders_clip_with_fake_argv(tmp_path, capsys):
+    sample_video = make_sample_video(tmp_path)
+    transcript_file = tmp_path / "transcript.json"
+    transcript_file.write_text(
+        json.dumps({
+            "segments": [{
+                "words": [
+                    {"word": "One", "start": 0.5, "end": 0.7},
+                    {"word": "two", "start": 0.7, "end": 0.9},
+                    {"word": "three", "start": 0.9, "end": 1.1},
+                    {"word": "four", "start": 1.1, "end": 1.3},
+                ]
+            }]
+        }),
+        encoding="utf-8",
+    )
+    moments_file = tmp_path / "moments.json"
+    moments_file.write_text(
+        json.dumps({
+            "moments": [
+                {"start": 0.4, "end": 1.8, "title": "Moment 1"}
+            ]
+        }),
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "clips"
+    fake_argv = [
+        "--video", str(sample_video),
+        "--transcript", str(transcript_file),
+        "--moments", str(moments_file),
+        "--index", "1",
+        "--out", str(out_dir),
+    ]
+
+    main(fake_argv)
+
+    captured = capsys.readouterr().out
+    assert "1080x1920" in captured
+    rendered = list(out_dir.glob("*.mp4"))
+    assert len(rendered) == 1
+    info = probe(rendered[0])
+    video_stream = next(stream for stream in info["streams"] if "width" in stream)
+    assert (video_stream["width"], video_stream["height"]) == (1080, 1920)
+    assert abs(float(info["format"]["duration"]) - 1.4) <= 0.5
+
+
+def test_cli_exits_non_zero_on_missing_file(tmp_path):
+    import pytest
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--video", "missing.mp4", "--transcript", "x.json", "--moments", "y.json", "--index", "1"])
+    assert exc_info.value.code != 0
+
+
+def test_cli_exits_non_zero_on_index_out_of_range(tmp_path):
+    import pytest
+    sample_video = make_sample_video(tmp_path)
+    transcript_file = tmp_path / "transcript.json"
+    transcript_file.write_text(json.dumps({"segments": []}), encoding="utf-8")
+    moments_file = tmp_path / "moments.json"
+    moments_file.write_text(json.dumps({"moments": [{"start": 0.4, "end": 1.8}]}), encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc_info:
+        main([
+            "--video", str(sample_video),
+            "--transcript", str(transcript_file),
+            "--moments", str(moments_file),
+            "--index", "5",
+        ])
+    assert exc_info.value.code != 0
+
