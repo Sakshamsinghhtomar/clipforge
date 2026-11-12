@@ -78,6 +78,49 @@ def test_candidate_with_non_numeric_start_is_rejected():
     assert rejected[0][1] == "start/end not numbers"
 
 
+def test_validate_backs_up_reply_opening_to_include_context():
+    chunks = [
+        {"start": 0, "end": 10, "text": "The setup question."},
+        {"start": 10, "end": 20, "text": "Yeah. What is it?"},
+        {"start": 20, "end": 55, "text": "Here is the explanation."},
+    ]
+
+    accepted, rejected = validate([make_candidate(10, 55)], chunks, DURATION)
+
+    assert rejected == []
+    assert accepted[0]["start"] == 0
+    assert accepted[0]["duration"] == 55
+
+
+def test_validate_backs_up_lowercase_continuation():
+    chunks = [
+        {"start": 0, "end": 10, "text": "The complete thought starts here and"},
+        {"start": 10, "end": 20, "text": "continues from the previous chunk."},
+        {"start": 20, "end": 55, "text": "A complete ending."},
+    ]
+
+    accepted, rejected = validate([make_candidate(10, 55)], chunks, DURATION)
+
+    assert rejected == []
+    assert accepted[0]["start"] == 0
+    assert accepted[0]["duration"] == 55
+
+
+def test_validate_rejects_backtracked_clip_over_maximum_length():
+    chunks = [
+        {"start": 0, "end": 10, "text": "Earlier setup."},
+        {"start": 10, "end": 20, "text": "More context."},
+        {"start": 20, "end": 30, "text": "Yeah, here is the answer."},
+        {"start": 30, "end": 80, "text": "The rest of the answer."},
+    ]
+
+    accepted, rejected = validate([make_candidate(20, 80)], chunks, DURATION)
+
+    assert accepted == []
+    assert len(rejected) == 1
+    assert rejected[0][1] == "duration 70s outside 30-60s"
+
+
 def test_merge_segments_combines_until_minimum_length():
     segments = [
         {"start": 0, "end": 3, "text": "First."},

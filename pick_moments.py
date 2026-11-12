@@ -47,8 +47,7 @@ Pick the {n} best moments. Rules:
 - Each clip must be between {MIN_CLIP} and {MAX_CLIP} seconds long. Aim for 40 to 60 seconds, because short clips lose their context.
 - start and end MUST be copied from the line timestamps in the transcript. Never invent timestamps.
 - The clip must make sense on its own, without needing the rest of the video.
-- - Start at the beginning of the idea (the question, setup or story start), even if the punchline comes later.
-- The first sentence must not be a reply to someone, and must not depend on earlier context (avoid openings like "it", "that", "this", "so", "but").
+- Start at the earliest chunk needed to include the full setup or question; never begin on a reply or on a sentence that continues from the preceding chunk.
 - Prefer stretches where one person speaks continuously. Avoid back-and-forth filler like "Yeah." "Okay."
 - Clips must not overlap each other.
 - Never invent or change dialogue. Only describe what is in the transcript.
@@ -124,6 +123,12 @@ def validate(candidates, chunks, duration):
             continue
 
         s, e = snap(s, starts), snap(e, ends)  # fix small LLM timing errors
+        start_index = starts.index(s)
+        opening = chunks[start_index].get("text", "").lstrip()
+        opening_word = opening.split(maxsplit=1)[0].strip(".,!?;:\"'()[]").lower() if opening else ""
+        reply_openings = {"yeah", "yes", "no", "okay", "ok", "hmm", "right", "exactly"}
+        if start_index and (opening[:1].islower() or opening_word in reply_openings):
+            s = starts[start_index - 1]
         if e <= s:
             rejected.append((label, "end is before start after snapping"))
         elif s < 0 or e > duration + 1:
