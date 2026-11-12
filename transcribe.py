@@ -11,16 +11,10 @@ from pathlib import Path
 from faster_whisper import WhisperModel
 
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python transcribe.py <video_file> [model_size]")
-        sys.exit(1)
-
-    video = Path(sys.argv[1])
-    model_size = sys.argv[2] if len(sys.argv) > 2 else "small"
+def transcribe_video(video_path, model_size="small", output_dir="transcripts"):
+    video = Path(video_path)
     if not video.exists():
-        print(f"File not found: {video}")
-        sys.exit(1)
+        raise FileNotFoundError(video)
 
     print(f"Loading model '{model_size}' (first run downloads it)...")
     model = WhisperModel(model_size, device="cpu", compute_type="int8")
@@ -57,7 +51,7 @@ def main():
         "segments": segments,
     }
 
-    out_dir = Path("transcripts")
+    out_dir = Path(output_dir)
     out_dir.mkdir(exist_ok=True)
     out_file = out_dir / f"{video.stem}.json"
     out_file.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -69,6 +63,22 @@ def main():
     print(f"Time taken:     {elapsed / 60:.1f} min ({speed:.1f}x realtime)")
     print(f"Segments:       {len(segments)}")
     print(f"Saved to:       {out_file}")
+    return out_file
+
+
+def main(argv=None):
+    args = sys.argv[1:] if argv is None else argv
+    if not args:
+        print("Usage: python transcribe.py <video_file> [model_size]")
+        sys.exit(1)
+
+    video = Path(args[0])
+    model_size = args[1] if len(args) > 1 else "small"
+    try:
+        transcribe_video(video, model_size)
+    except FileNotFoundError:
+        print(f"File not found: {video}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
