@@ -1,3 +1,5 @@
-﻿venv/
+﻿__pycache__/
+moments/
 transcripts/
 *.mp4
+venv/
